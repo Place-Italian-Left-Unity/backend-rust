@@ -1,5 +1,6 @@
-use crate::{errors::Error, program_constants::ProgramConstants};
+use crate::{api::ArtListData, errors::Error, program_constants::ProgramConstants};
 
+mod api;
 mod errors;
 mod program_constants;
 
@@ -26,12 +27,15 @@ async fn main() {
     // 0x07 is BEL
     println!("\x07+++ Starting Backend +++");
 
-    let server = tiny_http::Server::http("0.0.0.0:3025").unwrap();
+    let server = tiny_http::Server::http(ALL_PROGRAM_CONSTANTS.listening_address.as_str()).unwrap();
+
+    println!("+++ Starting Server +++");
 
     let server = std::sync::Arc::new(server);
     let mut handles = Vec::with_capacity(ALL_PROGRAM_CONSTANTS.server_threads as usize);
 
-    for _ in 0..ALL_PROGRAM_CONSTANTS.server_threads {
+    for server_thread_number in 0..ALL_PROGRAM_CONSTANTS.server_threads {
+        println!("+++ Started Thread {server_thread_number} +++");
         let server = server.clone();
 
         let guard = std::thread::spawn(async move || {
@@ -56,8 +60,23 @@ async fn main() {
                     let _ = rq.respond(response);
                     continue;
                 }
-                
+
                 match url {
+                    "/api/art/list" => {
+                        let data: Vec<ArtListData> = ALL_PROGRAM_CONSTANTS
+                            .templates_data
+                            .iter()
+                            .map(ArtListData::from_template_data)
+                            .collect();
+                        let data = serde_json::to_string(&data).unwrap();
+                        let response = shortened_response_new(
+                            200,
+                            b"application/json",
+                            data.len(),
+                            std::io::Cursor::new(data),
+                        );
+                        let _ = rq.respond(response);
+                    }
                     _ => continue,
                 }
             }
@@ -66,7 +85,7 @@ async fn main() {
         handles.push(guard);
     }
 
-    for h in handles {
+    if let Some(h) = handles.into_iter().next() {
         h.join().unwrap().await;
     }
 }

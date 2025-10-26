@@ -1,12 +1,11 @@
 use serde::Deserialize;
-use wplace_core_library::{
-    image_data::ImageData, template_data::TemplateData, tile_coords::TileCoords,
-};
+use wplace_core_library::template_data::TemplateData;
 
 pub struct ProgramConstants {
     pub templates_path: String,
     pub server_threads: u8,
     pub templates_data: Vec<TemplateData>,
+    pub listening_address: String,
 }
 
 impl Default for ProgramConstants {
@@ -15,6 +14,7 @@ impl Default for ProgramConstants {
             templates_path: String::from("./templates/"),
             server_threads: 4,
             templates_data: Vec::with_capacity(32),
+            listening_address: String::from("0.0.0.0:3025"),
         }
     }
 }
@@ -35,12 +35,14 @@ impl ProgramConstants {
                     Ok(v) => out.server_threads = v,
                     Err(_) => continue,
                 },
+                (Some("addr"), Some(v)) => out.listening_address = v.to_string(),
                 _ => continue,
             }
         }
 
         println!("CLI Templates Path: {}", out.templates_path);
         println!("CLI Server Threads: {}", out.server_threads);
+        println!("CLI Server Listening Address: {}", out.listening_address);
 
         if !std::path::Path::new(&out.templates_path).exists() {
             panic!("Templates path doesn't exist");
@@ -61,16 +63,14 @@ impl ProgramConstants {
             .into_iter()
             .map(|metadata| {
                 let file_path = format!("{}{}", out.templates_path, metadata.file_name);
-                TemplateData::new(
-                    metadata.name,
-                    TileCoords::parse_tile_coords_string(&metadata.coords).unwrap(),
-                    match ImageData::new(std::path::Path::new(&file_path)) {
-                        Ok(v) => v,
-                        Err(e) => panic!("Couldn't read {file_path}: {e}")
-                    }
-                )
+                match TemplateData::from_data(metadata.name, &metadata.coords, file_path) {
+                    Ok(v) => v,
+                    Err(e) => panic!("Couldn't load template data: {e}"),
+                }
             })
             .collect();
+
+        println!("\x07+++ Finished Loading Program Constants +++");
 
         out
     }
@@ -82,5 +82,5 @@ struct WplaceTemplateMetadata {
     name: String,
     file_name: String,
     coords: String,
-    alliance: String,
+    // alliance: String,
 }
